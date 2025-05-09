@@ -1,6 +1,6 @@
 import motor.motor_asyncio
 from config import DB_NAME, DB_URI
-from datetime import datetime
+from datetime import datetime, timedelta
 
 class Database:
     
@@ -15,7 +15,9 @@ class Database:
             id = id,
             name = name,
             session = None,
-            join_date = datetime.now()
+            verified = False,
+            join_date = datetime.now(),
+            last_active = datetime.now()
         )
     
     async def add_user(self, id, name):
@@ -27,8 +29,7 @@ class Database:
         return bool(user)
     
     async def total_users_count(self):
-        count = await self.col.count_documents({})
-        return count
+        return await self.col.count_documents({})
 
     async def get_all_users(self):
         return self.col.find({})
@@ -37,13 +38,41 @@ class Database:
         await self.col.delete_many({'id': int(user_id)})
 
     async def set_session(self, id, session):
-        await self.col.update_one({'id': int(id)}, {'$set': {'session': session}})
+        await self.col.update_one(
+            {'id': int(id)},
+            {'$set': {'session': session, 'last_active': datetime.now()}}
+        )
 
     async def get_session(self, id):
         user = await self.col.find_one({'id': int(id)})
         return user.get('session')
 
-    # New methods for group tracking
+    async def verify_user(self, user_id: int):
+        await self.col.update_one(
+            {'id': user_id},
+            {'$set': {'verified': True, 'verification_date': datetime.now()}},
+            upsert=True
+        )
+
+    async def get_verified_users_count(self):
+        return await self.col.count_documents({'verified': True})
+
+    async def active_users_count(self, days: int = 1):
+        cutoff_date = datetime.now() - timedelta(days=days)
+        return await self.col.count_documents({
+            '$or': [
+                {'last_active': {'$gte': cutoff_date}},
+                {'join_date': {'$gte': cutoff_date}}
+            ]
+        })
+
+    async def total_requests_count(self):
+        return await self.col.count_documents({'join_requests': {'$exists': True}})
+
+    async def get_storage_size(self):
+        stats = await self.db.command("dbstats")
+        return f"{stats['dataSize']/1024/1024:.2f} MB"
+
     async def add_group(self, id, title):
         await self.groups_col.update_one(
             {'id': int(id)},
