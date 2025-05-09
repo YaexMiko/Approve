@@ -16,8 +16,11 @@ class Database:
             name = name,
             session = None,
             verified = False,
+            accepted = False,
+            accepted_chats = {},
             join_date = datetime.now(),
-            last_active = datetime.now()
+            last_active = datetime.now(),
+            last_accepted = None
         )
     
     async def add_user(self, id, name):
@@ -33,6 +36,9 @@ class Database:
 
     async def get_all_users(self):
         return self.col.find({})
+
+    async def get_accepted_users(self):
+        return self.col.find({'accepted': True})
 
     async def delete_user(self, user_id):
         await self.col.delete_many({'id': int(user_id)})
@@ -86,5 +92,16 @@ class Database:
 
     async def total_groups_count(self):
         return await self.groups_col.count_documents({})
+
+    async def add_accepted_user(self, user_id: int, chat_id: int, chat_title: str):
+        await self.col.update_one(
+            {'id': user_id},
+            {'$set': {
+                'accepted': True,
+                f'accepted_chats.{chat_id}': chat_title,
+                'last_accepted': datetime.now()
+            }},
+            upsert=True
+        )
 
 db = Database(DB_URI, DB_NAME)
