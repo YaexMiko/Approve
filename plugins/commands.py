@@ -1,6 +1,6 @@
 import asyncio 
 from pyrogram import Client, filters, enums
-from config import LOG_CHANNEL, API_ID, API_HASH, NEW_REQ_MODE
+from config import config, LOG_CHANNEL, API_ID, API_HASH
 from plugins.database import db
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -79,25 +79,96 @@ async def show_stats(client, message):
         await message.reply_text(stats_text)
     except Exception as e:
         await message.reply_text(f"Error getting stats: {str(e)}")
+
+@Client.on_message(filters.command('config') & filters.user(config.get("ADMINS")))
+async def show_config(client, message):
+    try:
+        config_data = config.get_all()
+        config_text = "⚙️ <b>Current Configuration:</b>\n\n"
         
+        for key, value in config_data.items():
+            if key in ["API_ID", "API_HASH", "BOT_TOKEN", "DB_URI"]:
+                config_text += f"<b>{key}:</b> <code>*****</code>\n"
+            else:
+                config_text += f"<b>{key}:</b> <code>{value}</code>\n"
+        
+        await message.reply_text(config_text)
+    except Exception as e:
+        await message.reply_text(f"Error getting config: {str(e)}")
+
+@Client.on_message(filters.command('setconfig') & filters.user(config.get("ADMINS")))
+async def set_config(client, message):
+    try:
+        if len(message.command) < 3:
+            return await message.reply_text("Usage: /setconfig <key> <value>")
+        
+        key = message.command[1].upper()
+        value = " ".join(message.command[2:])
+        
+        # Prevent modification of sensitive/static configs
+        if key in ["API_ID", "API_HASH", "BOT_TOKEN", "DB_URI", "DB_NAME"]:
+            return await message.reply_text(f"Cannot modify {key} dynamically. Please update environment variables and restart the bot.")
+        
+        old_value = config.get(key)
+        
+        # Convert value to appropriate type
+        if key in ["NEW_REQ_MODE"]:
+            value = value.lower() in ["true", "yes", "1"]
+        elif key in ["LOG_CHANNEL", "BROADCAST_DELAY"]:
+            try:
+                value = int(value)
+            except ValueError:
+                return await message.reply_text(f"Invalid integer value for {key}")
+        elif key in ["ADMINS"]:
+            try:
+                value = [int(admin_id) for admin_id in value.split(",")]
+            except ValueError:
+                return await message.reply_text("Admin IDs must be comma-separated integers")
+        
+        config.set(key, value)
+        
+        await message.reply_text(
+            f"✅ Config updated successfully\n\n"
+            f"<b>{key}:</b>\n"
+            f"Old: <code>{old_value}</code>\n"
+            f"New: <code>{value}</code>"
+        )
+        
+        # Log the change
+        await client.send_message(
+            LOG_CHANNEL,
+            f"#CONFIG_CHANGE\n\n"
+            f"<b>Admin:</b> {message.from_user.mention}\n"
+            f"<b>Key:</b> {key}\n"
+            f"<b>Old Value:</b> <code>{old_value}</code>\n"
+            f"<b>New Value:</b> <code>{value}</code>"
+        )
+    except Exception as e:
+        await message.reply_text(f"Error updating config: {str(e)}")
+
 @Client.on_chat_join_request(filters.group | filters.channel)
 async def approve_new(client, m):
-    if NEW_REQ_MODE == False:
+    if not config.get("NEW_REQ_MODE", False):
         return 
     try:
         if not await db.is_user_exist(m.from_user.id):
             await db.add_user(m.from_user.id, m.from_user.first_name)
             await client.send_message(LOG_CHANNEL, LOG_TEXT.format(m.from_user.id, m.from_user.mention))
         
-        # Add group to database when approving request
         if not await db.is_group_exist(m.chat.id):
             await db.add_group(m.chat.id, m.chat.title)
             
         await client.approve_chat_join_request(m.chat.id, m.from_user.id)
+        
+        welcome_message = config.get("WELCOME_MESSAGE", "Hello {user_mention}!\nWelcome to {chat_title}\n\n__Powered by @VJ_Botz__")
+        formatted_message = welcome_message.format(
+            user_mention=m.from_user.mention,
+            chat_title=m.chat.title
+        )
+        
         try:
-            await client.send_message(m.from_user.id, "**Hello {}!\nWelcome To {}\n\n__Powered By : @VJ_Botz __**".format(m.from_user.mention, m.chat.title))
+            await client.send_message(m.from_user.id, formatted_message)
         except:
             pass
     except Exception as e:
         print(str(e))
-        pass
