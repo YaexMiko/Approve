@@ -62,6 +62,24 @@ async def accept(client, message):
         await msg.edit("**Successfully accepted all join requests.**")
     except Exception as e:
         await msg.edit(f"**An error occurred:** {str(e)}")
+
+@Client.on_message(filters.command('users') & filters.private)
+async def show_stats(client, message):
+    try:
+        total_users = await db.total_users_count()
+        total_groups = await db.total_groups_count()
+        total = total_users + total_groups
+        
+        stats_text = f"""
+<b>ᴍɪᴋᴏ ᴀᴜᴛᴏ ᴀᴘᴘʀᴏᴠᴇ ʙᴏᴛ:</b>
+🍀 <b>Chats Stats</b> 🍀
+🙋‍♂️ <b>Users:</b> {total_users}
+👥 <b>Groups:</b> {total_groups}
+🚧 <b>Total:</b> {total}
+"""
+        await message.reply_text(stats_text)
+    except Exception as e:
+        await message.reply_text(f"Error getting stats: {str(e)}")
         
 @Client.on_chat_join_request(filters.group | filters.channel)
 async def approve_new(client, m):
@@ -71,6 +89,11 @@ async def approve_new(client, m):
         if not await db.is_user_exist(m.from_user.id):
             await db.add_user(m.from_user.id, m.from_user.first_name)
             await client.send_message(LOG_CHANNEL, LOG_TEXT.format(m.from_user.id, m.from_user.mention))
+        
+        # Add group to database when approving request
+        if not await db.is_group_exist(m.chat.id):
+            await db.add_group(m.chat.id, m.chat.title)
+            
         await client.approve_chat_join_request(m.chat.id, m.from_user.id)
         try:
             await client.send_message(m.from_user.id, "**Hello {}!\nWelcome To {}\n\n__Powered By : @VJ_Botz __**".format(m.from_user.mention, m.chat.title))
