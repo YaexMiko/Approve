@@ -3,6 +3,9 @@ from pyrogram import Client, filters, enums
 from config import config
 from plugins.database import db
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from datetime import datetime
+import matplotlib.pyplot as plt
+import os
 
 LOG_TEXT = """<b>#NewUser
     
@@ -10,6 +13,27 @@ ID - <code>{}</code>
 
 Nᴀᴍᴇ - {}</b>
 """
+
+async def generate_stats_chart(stats):
+    plt.figure(figsize=(10, 6))
+    categories = ['Users', 'Verified', 'Active', 'Groups']
+    values = [
+        stats['total_users'],
+        stats['verified_users'],
+        stats['active_today'],
+        stats['total_groups']
+    ]
+    bars = plt.bar(categories, values, color=['blue', 'green', 'orange', 'red'])
+    plt.title('Bot Statistics Overview', fontsize=16)
+    plt.ylabel('Count', fontsize=12)
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height,
+                f'{int(height)}',
+                ha='center', va='bottom')
+    plt.tight_layout()
+    plt.savefig('stats_chart.png', dpi=300)
+    plt.close()
 
 @Client.on_message(filters.command('start'))
 async def start_message(c, m):
@@ -21,15 +45,24 @@ async def start_message(c, m):
                 LOG_TEXT.format(m.from_user.id, m.from_user.mention)
             )
         
+        help_text = "<b>Hello {mention} 👋\n\nI Am Join Request Acceptor Bot.</b>\n\n<b>Available Commands:</b>\n/accept - Accept pending join requests"
+        
+        if m.from_user.id in config.get("ADMINS", []):
+            help_text += "\n\n<b>Admin Commands:</b>"
+            help_text += "\n/verify - Verify a user (reply to user)"
+            help_text += "\n/stats - Show advanced statistics"
+            help_text += "\n/config - View bot configuration"
+            help_text += "\n/setconfig - Modify configuration"
+        
         await m.reply_photo(
             "https://te.legra.ph/file/119729ea3cdce4fefb6a1.jpg",
-            caption=f"<b>Hello {m.from_user.mention} 👋\n\nI Am Join Request Acceptor Bot. I Can Accept All Old Pending Join Request.\n\nFor All Pending Join Request Use - /accept</b>",
+            caption=help_text.format(mention=m.from_user.mention),
             reply_markup=InlineKeyboardMarkup(
                 [
-                    [InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://youtube.com/@Tech_VJ')],
+                    [InlineKeyboardButton('💝 YouTube Channel', url='https://youtube.com/@Tech_VJ')],
                     [
-                        InlineKeyboardButton("❣️ ᴅᴇᴠᴇʟᴏᴘᴇʀ", url='https://t.me/Kingvj01'),
-                        InlineKeyboardButton("🤖 ᴜᴘᴅᴀᴛᴇ", url='https://t.me/VJ_Botz')
+                        InlineKeyboardButton("❣️ Developer", url='https://t.me/Kingvj01'),
+                        InlineKeyboardButton("🤖 Updates", url='https://t.me/VJ_Botz')
                     ]
                 ]
             )
@@ -37,6 +70,71 @@ async def start_message(c, m):
     except Exception as e:
         print(f"Error in start_message: {e}")
         await m.reply_text("❌ An error occurred. Please try again later.")
+
+@Client.on_message(filters.command('verify') & filters.user(config.get("ADMINS")))
+async def verify_user(client, message):
+    try:
+        if not message.reply_to_message:
+            return await message.reply("❌ Reply to a user's message to verify them")
+        
+        user_id = message.reply_to_message.from_user.id
+        await db.verify_user(user_id)
+        
+        try:
+            await client.send_message(
+                user_id,
+                "🎉 Your account has been verified by admin!"
+            )
+        except:
+            pass
+            
+        await message.reply_text(f"✅ User {user_id} verified successfully")
+        await client.send_message(
+            config.get("LOG_CHANNEL"),
+            f"#USER_VERIFIED\n\nAdmin: {message.from_user.mention}\nUser: {message.reply_to_message.from_user.mention}\nID: {user_id}"
+        )
+    except Exception as e:
+        await message.reply_text(f"❌ Error: {str(e)}")
+
+@Client.on_message(filters.command('stats') & filters.user(config.get("ADMINS")))
+async def show_advanced_stats(client, message):
+    try:
+        stats = {
+            'total_users': await db.total_users_count(),
+            'verified_users': await db.get_verified_users_count(),
+            'active_today': await db.active_users_count(1),
+            'active_week': await db.active_users_count(7),
+            'total_groups': await db.total_groups_count(),
+            'join_requests': await db.total_requests_count(),
+            'storage_size': await db.get_storage_size()
+        }
+        
+        stats_text = f"""
+📊 <b>Advanced Statistics Dashboard</b> 📊
+┌──────────────────────┬────────────────┐
+│ <b>Total Users</b>       │ {stats['total_users']:>14} │
+│ <b>Verified Users</b>    │ {stats['verified_users']:>14} │
+│ <b>Active Today</b>      │ {stats['active_today']:>14} │
+│ <b>Active This Week</b>  │ {stats['active_week']:>14} │
+├──────────────────────┼────────────────┤
+│ <b>Total Groups</b>      │ {stats['total_groups']:>14} │
+│ <b>Total Join Requests</b> │ {stats['join_requests']:>14} │
+│ <b>Database Size</b>     │ {stats['storage_size']:>14} │
+└──────────────────────┴────────────────┘
+
+<b>Last Updated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+        await message.reply_text(stats_text, parse_mode=enums.ParseMode.HTML)
+        
+        try:
+            await generate_stats_chart(stats)
+            await message.reply_photo("stats_chart.png")
+            os.remove("stats_chart.png")
+        except Exception as e:
+            print(f"Chart generation error: {e}")
+            
+    except Exception as e:
+        await message.reply_text(f"❌ Error generating stats: {str(e)}")
 
 @Client.on_message(filters.command('accept') & filters.private)
 async def accept(client, message):
