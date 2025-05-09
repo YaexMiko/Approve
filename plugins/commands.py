@@ -71,7 +71,6 @@ async def show_stats(client, message):
         total = total_users + total_groups
         
         stats_text = f"""
-<b>ᴍɪᴋᴏ ᴀᴜᴛᴏ ᴀᴘᴘʀᴏᴠᴇ ʙᴏᴛ:</b>
 🍀 <b>Chats Stats</b> 🍀
 🙋‍♂️ <b>Users:</b> {total_users}
 👥 <b>Groups:</b> {total_groups}
