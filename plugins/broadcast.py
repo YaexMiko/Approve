@@ -1,7 +1,7 @@
 from pyrogram.errors import InputUserDeactivated, UserNotParticipant, FloodWait, UserIsBlocked, PeerIdInvalid
 from plugins.database import db
 from pyrogram import Client, filters
-from config import ADMINS
+from config import config
 import asyncio
 import datetime
 import time
@@ -13,6 +13,9 @@ logger.setLevel(logging.INFO)
 async def broadcast_messages(user_id, message):
     try:
         await message.copy(chat_id=user_id)
+        delay = config.get("BROADCAST_DELAY", 1)
+        if delay > 0:
+            await asyncio.sleep(delay)
         return True, "Success"
     except FloodWait as e:
         await asyncio.sleep(e.value)
@@ -33,7 +36,7 @@ async def broadcast_messages(user_id, message):
         return False, "Error"
 
 
-@Client.on_message(filters.command("broadcast") & filters.user(ADMINS) & filters.reply)
+@Client.on_message(filters.command("broadcast") & filters.user(config.get("ADMINS")) & filters.reply)
 async def verupikkals(bot, message):
     users = await db.get_all_users()
     b_msg = message.reply_to_message
@@ -64,7 +67,6 @@ async def verupikkals(bot, message):
             if not done % 20:
                 await sts.edit(f"Broadcast in progress:\n\nTotal Users {total_users}\nCompleted: {done} / {total_users}\nSuccess: {success}\nBlocked: {blocked}\nDeleted: {deleted}")    
         else:
-            # Handle the case where 'id' key is missing in the user dictionary
             done += 1
             failed += 1
             if not done % 20:
